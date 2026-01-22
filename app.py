@@ -1,43 +1,44 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-import matplotlib.pyplot as plt
 
-# Title of the app
-st.title("Stock Price Comparison")
+st.title("Normed 5Y Monthly Returns Comparison")
 
-# Input for ticker symbols
-ticker1 = st.text_input("Enter the first ticker symbol:")
-ticker2 = st.text_input("Enter the second ticker symbol:")
+# --- Inputs ---
+col1, col2 = st.columns(2)
+with col1:
+    ticker1 = st.text_input("Ticker 1", value="AAPL")
+with col2:
+    ticker2 = st.text_input("Ticker 2", value="MSFT")
 
-# Function to fetch and validate ticker data
-def fetch_data(ticker):
-    try:
-        data = yf.download(ticker, period="5y", interval="1mo")['Adj Close']
-        if data.empty:
-            raise ValueError("No data found for the ticker.")
-        return data
-    except Exception as e:
-        st.error(f"Error fetching data for {ticker}: {str(e)}")
-        return None
+if st.button("Run analysis"):
+    tickers = [ticker1.strip().upper(), ticker2.strip().upper()]
 
-# Fetch data for both tickers
-data1 = fetch_data(ticker1)
-data2 = fetch_data(ticker2)
+    # --- Download 5-year monthly data ---
+    data = yf.download(
+        tickers=tickers,
+        period="5y",          # last 5 years
+        interval="1mo",       # monthly data
+        auto_adjust=True,
+        progress=False
+    )  # MultiIndex columns if multiple tickers[web:11]
 
-# Proceed if both data sets are valid
-if data1 is not None and data2 is not None:
-    # Normalize the adjusted close prices
-    norm_data1 = data1 / data1.iloc[0]
-    norm_data2 = data2 / data2.iloc[0]
+    # Handle single vs multiple ticker column structure
+    if isinstance(data.columns, pd.MultiIndex):
+        px = data["Close"].copy()
+    else:
+        px = data[["Close"]].copy()
+        px.columns = tickers  # name the single column
 
-    # Plotting
-    plt.figure(figsize=(10, 5))
-    plt.plot(norm_data1.index, norm_data1, label=ticker1)
-    plt.plot(norm_data2.index, norm_data2, label=ticker2)
-    plt.title('Normalized Adjusted Close Price Comparison')
-    plt.xlabel('Date')
-    plt.ylabel('Normalized Price')
-    plt.legend()
-    plt.grid()
-    st.pyplot(plt)
+    # Drop rows with all NaNs
+    px = px.dropna(how="all")
+
+    # --- Normed returns (index starting at 1) ---
+    normed = px.div(px.iloc[0])  # divide each row by first row values[web:9]
+
+    st.subheader("Normed price series (start = 1.0)")
+    st.dataframe(normed.tail())
+
+    # --- Plot both tickers on same chart ---
+    st.subheader("Normed 5Y Monthly Performance")
+    st.line_chart(normed)  # each column is a separate line, index on x-axis[web:13]
